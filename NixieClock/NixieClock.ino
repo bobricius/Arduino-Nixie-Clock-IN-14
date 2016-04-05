@@ -1,10 +1,3 @@
-//
-//  Nixie Clock.ino
-//
-//  Created by Mr. Gecko's Media (James Coleman) on 7/23/14.
-//  No Copyright Claimed. Public Domain.
-//
-
 #include <Wire.h>
 #include "RTClib.h"
 #include "OneWire.h"
@@ -12,172 +5,62 @@
 #include "Nixies.h"
 #include "Registers.h"
 
-const unsigned int button1Pin = 10;
-const unsigned int button2Pin = 11;
-unsigned int button1State = 0;
-unsigned int button2State = 0;
 
-OneWire ds(2); // Temperature Sensor on pin 2
+OneWire ds(4); // Temperature Sensor on pin 2
 RTC_DS1307 RTC;
 
-unsigned int serialPin = 5;
-unsigned int serialClockPin = 7;
-unsigned int registerClockPin = 6;
+const int led1 =  9;      // the number of the LED pin
+const int led2 =  10;      // the number of the LED pin
+
+#define modeBtn   2
+#define hoursBtn   14
+#define minutesBtn   15
+
+unsigned int serialPin = 7 ;
+unsigned int serialClockPin = 6;
+unsigned int registerClockPin = 5;
+int hour, minute, second; 
 
 Nixies nixies;
 
 void setup() {
-	Serial.begin(9600);
+//	Serial.begin(9600);
 	Wire.begin();
 	
 	RTC.begin();
 	if (!RTC.isrunning()) {
-		Serial.println("RTC needs to be set");
+//		Serial.println("RTC needs to be set");
 		RTC.adjust(DateTime(__DATE__, __TIME__));
 	}
-	
-	pinMode(button1Pin, INPUT);
-	pinMode(button2Pin, INPUT);       
-	
+
+ pinMode(led1, OUTPUT);
+ pinMode(led2, OUTPUT);   
+   
+ pinMode(modeBtn, INPUT);
+ pinMode(hoursBtn, INPUT);    
+ pinMode(minutesBtn, INPUT);
+
+ digitalWrite(modeBtn, HIGH);
+ digitalWrite(hoursBtn, HIGH);    
+ digitalWrite(minutesBtn, HIGH);
+ 
+
 	nixies.initialize(serialPin, serialClockPin, registerClockPin, 6);
 }
 
-void parseSerialData(char *data) {
-	char *originalData = data;
-	char *array[10];
-	int arrayCount = 0;
-	
-	char *parse = strtok(data, ",");
-	while (parse!=NULL) {
-		array[arrayCount] = parse;
-		arrayCount++;
-		if (arrayCount>=9)
-			return;
-		parse = strtok(NULL, ",");
-	}
-	array[arrayCount] = NULL;
-	
-	if (arrayCount==0)
-		return;
-	if (strcmp(array[0],"pi")==0) {//Ping
-		Serial.println(originalData);
-	} else if (strcmp(array[0],"st")==0 && arrayCount==8) {// Set Time
-		delay(atoi(array[7]));
-		RTC.adjust(DateTime(atoi(array[1])/*Year*/, atoi(array[2])/*Month*/, atoi(array[3])/*Day*/, atoi(array[4])/*Hour*/, atoi(array[5])/*Minute*/, atoi(array[6])/*Second*/));
-	} else if (strcmp(array[0],"dp")==0 && arrayCount==3) { // Display for MS.
-		char *display = array[1];
-		int length = strlen(display);
-		if (length>6)
-			return;
-		for (int i=0; i<6; i++) {
-			int value;
-			if (i<length) {
-				char digit = display[i];
-				if (digit==' ') {
-					value = 10;
-				} else {
-					value = atoi(&digit);
-				}
-			} else {
-				value = 10;
-			}
-			nixies.setNixie(5-i, value);
-		}
-		nixies.update();
-		delay(atoi(array[2]));
-	} else if (strcmp(array[0],"test")==0) { // Run tests
-		testTubes();
-	} else if (strcmp(array[0],"temp")==0) { // Display Temperature
-		displayTemperature();
-	} else if (strcmp(array[0],"readtemp")==0) { // Display Temperature
-		float temperature = getTemperatureFahrenheit();
-		Serial.println(temperature);
-	} else if (strcmp(array[0],"readtempc")==0) { // Display Temperature
-		float temperature = getTemperature();
-		Serial.println(temperature);
-	}
-}
+//		RTC.adjust(DateTime(atoi(array[1])/*Year*/, atoi(array[2])/*Month*/, atoi(array[3])/*Day*/, atoi(array[4])/*Hour*/, atoi(array[5])/*Minute*/, atoi(array[6])/*Second*/));
+    // following line sets the RTC to the date & time this sketch was compiled
+//    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    // This line sets the RTC with an explicit date & time, for example to set
+    // January 21, 2014 at 3am you would call:
+    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
 
-void processSerialData() {
-	unsigned long startRead = millis();
-	char *bytesRead = (char *)malloc(50);
-	int bytesLength = 0;
-	bool goodRead = true;
-	while (1) {
-		if (Serial.available()) {
-			char byteRead = Serial.read();
-			// If we receive a end line, we received the response.
-			if (byteRead=='\r')
-				continue;
-			if (byteRead=='\n')
-				break;
-			bytesRead[bytesLength] = byteRead;
-			bytesLength++;
-			// We don't want a buffer overrun. The responses from the bluetooth board is usually 3 characters long.
-			if (bytesLength>=49) {
-				goodRead = false;
-				break;
-			}
-		}
-		// Insure there isn't a error in reading and this doesn't continue reading infinite.
-		if ((millis()-startRead)>=1000) {
-			goodRead = false;
-			break;
-		}
-	}
-	bytesRead[bytesLength] = '\0';
-	if (goodRead) {
-		parseSerialData(bytesRead);
-	}
-	free(bytesRead);
-}
 
-void displayTemperature() {
-	int temperature = getTemperatureFahrenheit();
-	
-	nixies.setNixie(5, temperature/10);
-	nixies.setNixie(4, temperature%10);
-	nixies.setNixie(3, 10);
-	nixies.setNixie(2, 10);
-	nixies.setNixie(1, 10);
-	nixies.setNixie(0, 10);
-	nixies.update();
-	delay(2000);
-}
 
-void testTubes() {
-	// Test every digit
-	for (int i=0; i<30; i++) {
-		nixies.setNixie(0, i%10);
-		nixies.setNixie(1, (i+1)%10);
-		nixies.setNixie(2, (i+2)%10);
-		nixies.setNixie(3, (i+3)%10);
-		nixies.setNixie(4, (i+4)%10);
-		nixies.setNixie(5, (i+5)%10);
-		nixies.update();
-		delay(500);
-	}
-	// Test setting to blank
-	nixies.setNixie(0, 10);
-	nixies.setNixie(1, 10);
-	nixies.setNixie(2, 10);
-	nixies.setNixie(3, 10);
-	nixies.setNixie(4, 10);
-	nixies.setNixie(5, 10);
-	nixies.update();
-	delay(1000);
-}
+
 
 void displayTime() {
-	DateTime now = RTC.now();
-	int hour = now.hour();
-	if (hour>12)
-		hour -= 12;
-	if (hour==0)
-		hour = 12;
-	int minute = now.minute();
-	int second = now.second();
-	
+
 	nixies.setNixie(5, hour/10);
 	nixies.setNixie(4, hour%10);
 	nixies.setNixie(3, minute/10);
@@ -188,32 +71,89 @@ void displayTime() {
 }
 
 void loop() {
-	if (Serial.available()) {
-		processSerialData();
-	}
-	
-	int state1 = digitalRead(button1Pin);
-	if (state1!=button1State && state1==HIGH) {
-		//displayTemperature();
-		Serial.println("b1"); // Send button press to serial.
-		button1State = state1;
-	} else if (state1!=button1State && state1==LOW) {
-		button1State = state1;
-	}
-	int state2 = digitalRead(button2Pin);
-	if (state2!=button2State && state2==HIGH) {
-		testTubes();
-		Serial.println("b2"); // Send button press to serial.
-		button2State = state2;
-	} else if (state2!=button2State && state2==LOW) {
-		button2State = state2;
-	}
-	
-	displayTime();
+	  DateTime now = RTC.now();
+   hour = now.hour();
+   minute = now.minute();
+   second = now.second();
+
+if (second==0)
+{
+  testTubes();
+}
+  
+  if (digitalRead(hoursBtn)==LOW)
+  {
+    hour++;
+    if (hour > 23) {
+      hour = 0;
+    }
+    if (hour < 0) {
+      hour = 23;
+    }
+  
+    digitalWrite(led2, HIGH);
+    delay(110);
+    digitalWrite(led2, LOW);
+    delay(110); 
+     second=1; 
+    RTC.adjust(DateTime(2014, 1, 21, hour, minute, second));
+  }
+
+  if (digitalRead(minutesBtn)==LOW)
+  {
+     minute++;
+    if (minute > 59) {
+      minute = 0;
+    }
+    if (minute < 0) {
+      minute = 59;
+    }
+
+    digitalWrite(led2, HIGH);
+    delay(110);
+    digitalWrite(led2, LOW);
+    delay(110); 
+     second=1; 
+    RTC.adjust(DateTime(2014, 1, 21, hour, minute, second));
+  }
+
+    if (digitalRead(modeBtn)==LOW)
+  {
+
+    displayTemperature();
+//    testTubes();
+  }
+
+//    digitalWrite(led1, HIGH);
+//    delay(100);
+//    digitalWrite(led1, LOW);
+//    delay(100);
+
+
+//
+//
+//  // fade in from min to max in increments of 5 points:
+//  for (int fadeValue = 0 ; fadeValue <= 255; fadeValue += 5) {
+//    // sets the value (range from 0 to 255):
+//    analogWrite(led2, fadeValue);
+//    // wait for 30 milliseconds to see the dimming effect
+//    delay(1);
+//  }
+//
+//  // fade out from max to min in increments of 5 points:
+//  for (int fadeValue = 255 ; fadeValue >= 0; fadeValue -= 5) {
+//    // sets the value (range from 0 to 255):
+//    analogWrite(led2, fadeValue);
+//    // wait for 30 milliseconds to see the dimming effect
+//    delay(1);
+//  }
+  
+  displayTime();
 }
 
 // Code for this function from http://bildr.org/2011/07/ds18b20-arduino/
 // Copyright (c) 2010 bildr community
+
 float getTemperature() {
 	//returns the temperature from one DS18S20 in DEG Celsius
 	byte data[12];
@@ -226,12 +166,12 @@ float getTemperature() {
 	}
 	
 	if (OneWire::crc8(addr, 7)!=addr[7]) {
-		Serial.println("CRC is not valid!");
+//		Serial.println("CRC is not valid!");
 		return -1000;
 	}
 
 	if (addr[0]!=0x10 && addr[0]!=0x28) {
-		Serial.print("Device is not recognized");
+//		Serial.print("Device is not recognized");
 		return -1000;
 	}
 
@@ -259,7 +199,64 @@ float getTemperature() {
 	return TemperatureSum;
 }
 
-float getTemperatureFahrenheit() {
-	float temperature = getTemperature();
-	return (temperature*(9.0/5.0))+32;
+
+void displayTemperature() {
+  int temperature = getTemperature();
+  
+  nixies.setNixie(5, temperature/10);
+  nixies.setNixie(4, temperature%10);
+  nixies.setNixie(3, 10);
+  nixies.setNixie(2, 10);
+  nixies.setNixie(1, 10);
+  nixies.setNixie(0, 10);
+  nixies.update();
+  // fade in from min to max in increments of 5 points:
+  for (int fadeValue = 0 ; fadeValue <= 255; fadeValue += 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(led1, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+
+  // fade out from max to min in increments of 5 points:
+  for (int fadeValue = 255 ; fadeValue >= 0; fadeValue -= 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(led1, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
 }
+
+void testTubes() {
+  // Test every digit
+  for (int i=0; i<10; i++) {
+   DateTime now = RTC.now();
+   second = now.second();
+    
+  nixies.setNixie(5, i);
+  nixies.setNixie(4, i);
+  nixies.setNixie(3, i);
+  nixies.setNixie(2, i);
+  nixies.setNixie(1, second/10);
+  nixies.setNixie(0, second%10);
+    nixies.update();
+    digitalWrite(led2, HIGH);
+    delay(1);
+    digitalWrite(led2, LOW);
+    delay(200);
+  }
+
+//  // Test setting to blank
+//  nixies.setNixie(0, 10);
+//  nixies.setNixie(1, 10);
+//  nixies.setNixie(2, 10);
+//  nixies.setNixie(3, 10);
+//  nixies.setNixie(4, 10);
+//  nixies.setNixie(5, 10);
+//  nixies.update();
+//
+//    digitalWrite(led1, HIGH);
+//    delay(300);
+//    digitalWrite(led1, LOW);
+}
+
